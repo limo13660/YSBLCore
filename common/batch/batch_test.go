@@ -10,6 +10,18 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestBatchRecoversTaskPanic(t *testing.T) {
+	b, _ := New[int](context.Background())
+	b.Go("panic-key", func() (int, error) {
+		panic("test panic")
+	})
+
+	results, batchErr := b.WaitAndGetResult()
+	assert.Equal(t, "panic-key", batchErr.Key)
+	assert.Error(t, batchErr.Err)
+	assert.Error(t, results["panic-key"].Err)
+}
+
 func TestBatch(t *testing.T) {
 	b, _ := New[string](context.Background())
 

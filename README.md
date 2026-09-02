@@ -5,6 +5,19 @@
 
 <h3 align="center">Another Mihomo Kernel.</h3>
 
+## YSBLCore / FlClash baseline
+
+YSBLCore keeps the newer Mihomo base and imports the embedding integration
+from the `FlClash` branch of [chen08209/Clash.Meta](https://github.com/chen08209/Clash.Meta/tree/FlClash).
+That upstream branch is fetched locally as `flclash/FlClash` at commit
+`80362fc1895dcf60b79b562896653046e0687413` for review and future rebases.
+
+The Flutter client owns listener and TUN lifecycle. Core configuration updates
+therefore update routing, proxies and rules in place; they do not recreate an
+active TUN interface. `StopListener` is reserved for an explicit VPN stop or
+shutdown. Existing YSBLCore protocol extensions remain enabled, including
+Mieru, Naive and Juicity, and must not be removed when syncing upstream changes.
+
 <p align="center">
   <a href="https://goreportcard.com/report/github.com/MetaCubeX/mihomo">
     <img src="https://goreportcard.com/badge/github.com/MetaCubeX/mihomo?style=flat-square">

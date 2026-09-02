@@ -2,6 +2,8 @@ package batch
 
 import (
 	"context"
+	"fmt"
+	"runtime/debug"
 	"sync"
 )
 
@@ -42,6 +44,14 @@ func (b *Batch[T]) Go(key string, fn func() (T, error)) {
 	b.wg.Add(1)
 	go func() {
 		defer b.wg.Done()
+		var value T
+		var err error
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				err = fmt.Errorf("batch task %q panicked: %v\n%s", key, recovered, debug.Stack())
+			}
+			b.storeResult(key, value, err)
+		}()
 		if b.queue != nil {
 			<-b.queue
 			defer func() {
@@ -49,21 +59,24 @@ func (b *Batch[T]) Go(key string, fn func() (T, error)) {
 			}()
 		}
 
-		value, err := fn()
-		if err != nil {
-			b.once.Do(func() {
-				b.err = &Error{key, err}
-				if b.cancel != nil {
-					b.cancel()
-				}
-			})
-		}
-
-		ret := Result[T]{value, err}
-		b.mux.Lock()
-		defer b.mux.Unlock()
-		b.result[key] = ret
+		value, err = fn()
 	}()
+}
+
+func (b *Batch[T]) storeResult(key string, value T, err error) {
+	if err != nil {
+		b.once.Do(func() {
+			b.err = &Error{key, err}
+			if b.cancel != nil {
+				b.cancel()
+			}
+		})
+	}
+
+	ret := Result[T]{value, err}
+	b.mux.Lock()
+	defer b.mux.Unlock()
+	b.result[key] = ret
 }
 
 func (b *Batch[T]) Wait() *Error {

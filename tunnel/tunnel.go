@@ -228,10 +228,7 @@ func RuleProviders() map[string]P.RuleProvider {
 
 // UpdateProxies handle update proxies
 func UpdateProxies(newProxies map[string]C.Proxy, newProviders map[string]P.ProxyProvider) {
-	configMux.Lock()
-	proxies = newProxies
-	providers = newProviders
-	configMux.Unlock()
+	UpdateAllProxies(newProxies, newProviders)
 }
 
 func UpdateListeners(newListeners map[string]C.InboundListener) {
@@ -351,7 +348,7 @@ func resolveMetadata(metadata *C.Metadata) (proxy C.Proxy, rule C.Rule, err erro
 		FindProcess: func() {
 			if attemptProcessLookup {
 				attemptProcessLookup = false
-				if !features.CMFA {
+				if !features.Android {
 					// normal check for process
 					uid, path, err := process.FindProcessName(metadata.NetWork.String(), metadata.SrcIP, int(metadata.SrcPort))
 					if err != nil {

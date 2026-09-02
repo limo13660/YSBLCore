@@ -218,7 +218,7 @@ func main() {
 	}
 
 	if updater.GeoAutoUpdate() {
-		updater.RegisterGeoUpdater()
+		updater.RegisterGeoUpdaterWithCancel()
 	}
 
 	if postDown != "" {
@@ -235,6 +235,7 @@ func main() {
 	}
 
 	defer executor.Shutdown()
+	defer updater.StopGeoUpdater()
 
 	termSign := make(chan os.Signal, 1)
 	hupSign := make(chan os.Signal, 1)

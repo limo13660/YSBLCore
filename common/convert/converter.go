@@ -595,6 +595,91 @@ func ConvertsV2Ray(buf []byte) ([]map[string]any, error) {
 
 			proxies = append(proxies, socks)
 
+		case "snell":
+			link, err := url.Parse(line)
+			if err != nil || link.Hostname() == "" || link.Port() == "" {
+				continue
+			}
+			query := link.Query()
+			psk := link.User.Username()
+			if psk == "" {
+				psk = firstQueryValue(query, "psk", "password")
+			}
+			if psk == "" {
+				continue
+			}
+			name := uniqueName(names, shareLinkName(link, "snell"))
+			snell := map[string]any{
+				"name":   name,
+				"type":   "snell",
+				"server": link.Hostname(),
+				"port":   link.Port(),
+				"psk":    psk,
+				"udp":    queryBoolDefault(query, "udp", true),
+			}
+			if version, err := strconv.Atoi(query.Get("version")); err == nil {
+				snell["version"] = version
+			}
+			if obfs := query.Get("obfs"); obfs != "" {
+				obfsOpts := map[string]any{"mode": obfs}
+				if host := firstQueryValue(query, "obfs-host", "obfsHost", "host"); host != "" {
+					obfsOpts["host"] = host
+				}
+				snell["obfs-opts"] = obfsOpts
+			}
+			proxies = append(proxies, snell)
+
+		case "ssh":
+			link, err := url.Parse(line)
+			if err != nil || link.Hostname() == "" {
+				continue
+			}
+			query := link.Query()
+			username := link.User.Username()
+			if username == "" {
+				username = firstQueryValue(query, "username", "user")
+			}
+			if username == "" {
+				continue
+			}
+			port := link.Port()
+			if port == "" {
+				port = "22"
+			}
+			ssh := map[string]any{
+				"name":     uniqueName(names, shareLinkName(link, "ssh")),
+				"type":     "ssh",
+				"server":   link.Hostname(),
+				"port":     port,
+				"username": username,
+			}
+			password, _ := link.User.Password()
+			if password == "" {
+				password = query.Get("password")
+			}
+			if password != "" {
+				ssh["password"] = password
+			}
+			for queryKey, optionKey := range map[string]string{
+				"private-key":            "private-key",
+				"privateKey":             "private-key",
+				"private-key-passphrase": "private-key-passphrase",
+				"privateKeyPassphrase":   "private-key-passphrase",
+			} {
+				if value := query.Get(queryKey); value != "" {
+					if _, exists := ssh[optionKey]; !exists {
+						ssh[optionKey] = value
+					}
+				}
+			}
+			if hostKey := firstQueryValue(query, "host-key", "hostKey"); hostKey != "" {
+				ssh["host-key"] = splitListValue(hostKey)
+			}
+			if algorithms := firstQueryValue(query, "host-key-algorithms", "hostKeyAlgorithms"); algorithms != "" {
+				ssh["host-key-algorithms"] = splitListValue(algorithms)
+			}
+			proxies = append(proxies, ssh)
+
 		case "anytls":
 			// https://github.com/anytls/anytls-go/blob/main/docs/uri_scheme.md
 			link, err := url.Parse(line)
@@ -714,6 +799,40 @@ func ConvertsV2Ray(buf []byte) ([]map[string]any, error) {
 	}
 
 	return proxies, nil
+}
+
+func shareLinkName(link *url.URL, fallback string) string {
+	if link.Fragment != "" {
+		return link.Fragment
+	}
+	return fmt.Sprintf("%s-%s:%s", fallback, link.Hostname(), link.Port())
+}
+
+func firstQueryValue(query url.Values, keys ...string) string {
+	for _, key := range keys {
+		if value := query.Get(key); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func queryBoolDefault(query url.Values, key string, fallback bool) bool {
+	value := strings.ToLower(query.Get(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err == nil {
+		return parsed
+	}
+	return value == "1" || value == "yes" || value == "on"
+}
+
+func splitListValue(value string) []string {
+	return strings.FieldsFunc(value, func(r rune) bool {
+		return r == ',' || r == '|'
+	})
 }
 
 func uniqueName(names map[string]int, name string) string {

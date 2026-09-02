@@ -63,8 +63,11 @@ const (
 	DefaultUDPTimeout = dialer.DefaultUDPTimeout
 	DefaultDropTime   = 12 * DefaultTCPTimeout
 	DefaultTLSTimeout = DefaultTCPTimeout
-	DefaultTestURL    = "https://www.gstatic.com/generate_204"
 )
+
+// DefaultTestURL is mutable so an embedding client can provide its preferred
+// health-check endpoint while retaining the upstream default.
+var DefaultTestURL = "https://www.gstatic.com/generate_204"
 
 var ErrNotSupport = errors.New("no support")
 

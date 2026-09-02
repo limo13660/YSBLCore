@@ -1,6 +1,7 @@
 package convert_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/metacubex/mihomo/adapter"
@@ -50,6 +51,24 @@ func TestConvertsV2Ray_hysteria2PortHopping(t *testing.T) {
 
 	_, err = adapter.ParseProxy(proxies[0])
 	assert.NoError(t, err)
+}
+
+func TestConvertsV2RaySnellAndSSH(t *testing.T) {
+	content := strings.Join([]string{
+		"snell://secret@example.com:443?version=4&obfs=http&obfs-host=cdn.example.com#snell-node",
+		"ssh://user:pass@example.net:2222?host-key=key-a,key-b&private-key=key-data#ssh-node",
+	}, "\n")
+
+	proxies, err := ConvertsV2Ray([]byte(content))
+	assert.NoError(t, err)
+	assert.Len(t, proxies, 2)
+	assert.Equal(t, "snell", proxies[0]["type"])
+	assert.Equal(t, "secret", proxies[0]["psk"])
+	assert.Equal(t, 4, proxies[0]["version"])
+	assert.Equal(t, "ssh", proxies[1]["type"])
+	assert.Equal(t, "user", proxies[1]["username"])
+	assert.Equal(t, "pass", proxies[1]["password"])
+	assert.Equal(t, []string{"key-a", "key-b"}, proxies[1]["host-key"])
 }
 
 func TestConvertsV2Ray_hysteria2RealmScheme(t *testing.T) {

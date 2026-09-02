@@ -47,22 +47,42 @@ var (
 	vmessListener       *sing_vmess.Listener
 	tuicListener        *tuic.Listener
 
-	// lock for recreate function
-	socksMux   sync.Mutex
-	httpMux    sync.Mutex
-	redirMux   sync.Mutex
-	tproxyMux  sync.Mutex
-	mixedMux   sync.Mutex
-	tunnelMux  sync.Mutex
-	inboundMux sync.Mutex
-	tunMux     sync.Mutex
-	ssMux      sync.Mutex
-	vmessMux   sync.Mutex
-	tuicMux    sync.Mutex
+	// lifecycleMux serializes multi-listener transitions. The individual
+	// locks below protect each listener type, while this lock prevents a
+	// configuration update from interleaving with a TUN/port teardown started
+	// by another entry point (for example the external controller PATCH API).
+	lifecycleMux sync.RWMutex
+	socksMux     sync.Mutex
+	httpMux      sync.Mutex
+	redirMux     sync.Mutex
+	tproxyMux    sync.Mutex
+	mixedMux     sync.Mutex
+	tunnelMux    sync.Mutex
+	inboundMux   sync.Mutex
+	tunMux       sync.Mutex
+	ssMux        sync.Mutex
+	vmessMux     sync.Mutex
+	tuicMux      sync.Mutex
 
 	LastTunConf  LC.Tun
 	LastTuicConf LC.TuicServer
 )
+
+// WithLifecycleLock executes fn while all listener and TUN transitions are
+// excluded. Callers should hold this lock around a complete configuration
+// update rather than locking each listener independently.
+func WithLifecycleLock(fn func()) {
+	lifecycleMux.Lock()
+	defer lifecycleMux.Unlock()
+	fn()
+}
+
+// WithLifecycleReadLock executes fn against a stable listener snapshot.
+func WithLifecycleReadLock(fn func()) {
+	lifecycleMux.RLock()
+	defer lifecycleMux.RUnlock()
+	fn()
+}
 
 type Ports struct {
 	Port              int    `json:"port"`
@@ -512,10 +532,8 @@ func ReCreateTun(tunConf LC.Tun, tunnel C.Tunnel) {
 		}
 	}()
 
-	if tunConf.Equal(LastTunConf) {
-		if tunLister != nil { // some default value in dialer maybe changed when config reload, reset at here
-			tunLister.OnReload()
-		}
+	if tunLister != nil && tunConf.Equal(LastTunConf) {
+		tunLister.OnReload()
 		return
 	}
 
