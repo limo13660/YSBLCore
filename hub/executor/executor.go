@@ -104,14 +104,13 @@ func ApplyConfig(cfg *config.Config, force bool) {
 	updateGeneral(cfg.General, true)
 	updateNTP(cfg.NTP)
 	updateDNS(cfg.DNS, cfg.General.IPv6)
-	// Listener and TUN lifecycles are owned by the embedding client. Keeping
-	// them out of ApplyConfig avoids tearing down an active VPN while a mode
-	// or profile update is being applied. The client explicitly starts,
-	// stops, or recreates these resources as one serialized transition.
-	listener.WithLifecycleLock(func() {
-		updateTunnels(cfg.Tunnels)
-	})
+	// Listener and TUN lifecycle is owned by explicit startListener/stopListener
+	// calls. Recreating these sockets during profile apply races a subsequent
+	// VPN stop and can leave a closing mixed port behind.
+	// updateListeners(cfg.General, cfg.Listeners, force)
+	// updateTun(cfg.General) // tun should not care "force"
 	updateIPTables(cfg)
+	updateTunnels(cfg.Tunnels)
 
 	tunnel.OnInnerLoading()
 
