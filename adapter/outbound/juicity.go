@@ -96,7 +96,7 @@ func (j *Juicity) dial(ctx context.Context) (*quic.Conn, error) {
 	if err := j.echConfig.ClientHandle(ctx, tlsConfig); err != nil {
 		return nil, err
 	}
-	_, quicConn, err := tuicCommon.DialQuic(ctx, j.addr, j.DialOptions(), j.dialer, tlsConfig, j.quicConfig, false)
+	_, quicConn, err := tuicCommon.DialQuic(ctx, j.addr, j.DialOptions(), j.dialer, tlsConfig, j.quicConfig, tuicCommon.DialQuicOption{})
 	if err != nil {
 		return nil, err
 	}

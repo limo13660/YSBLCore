@@ -102,8 +102,8 @@ func ApplyConfig(cfg *config.Config, force bool) {
 	updateSniffer(cfg.Sniffer)
 	updateHosts(cfg.Hosts)
 	updateGeneral(cfg.General, true)
-	updateNTP(cfg.NTP)
 	updateDNS(cfg.DNS, cfg.General.IPv6)
+	updateNTP(cfg.NTP) // initialize NTP after DNS because an NTP server may be a hostname.
 	// Listener and TUN lifecycle is owned by explicit startListener/stopListener
 	// calls. Recreating these sockets during profile apply races a subsequent
 	// VPN stop and can leave a closing mixed port behind.

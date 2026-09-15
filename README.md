@@ -5,12 +5,14 @@
 
 <h3 align="center">Another Mihomo Kernel.</h3>
 
-## YSBLCore / FlClash baseline
+## YSBLCore / Mihomo Meta baseline
 
-YSBLCore keeps the newer Mihomo base and imports the embedding integration
-from the `FlClash` branch of [chen08209/Clash.Meta](https://github.com/chen08209/Clash.Meta/tree/FlClash).
-That upstream branch is fetched locally as `flclash/FlClash` at commit
-`80362fc1895dcf60b79b562896653046e0687413` for review and future rebases.
+YSBLCore tracks the official [MetaCubeX/mihomo `Meta` branch](https://github.com/MetaCubeX/mihomo/tree/Meta).
+The current baseline is `v1.19.31` (`ab405bad5beeeac8b003bb01f60f134f6df54471`).
+Upstream protocol implementations, including Sudoku, are used directly. The
+YSBLCore-specific changes are limited to the embedding hooks and protocol
+extensions that were already part of the client baseline; they must be kept
+when syncing a newer official Meta release.
 
 The Flutter client owns listener and TUN lifecycle. Core configuration updates
 therefore update routing, proxies and rules in place; they do not recreate an
@@ -34,7 +36,7 @@ Mieru, Naive and Juicity, and must not be removed when syncing upstream changes.
 ## Features
 
 - Local HTTP/HTTPS/SOCKS server with authentication support
-- VMess, VLESS, Shadowsocks, Trojan, Snell, TUIC, Hysteria, Naive, Brook, and Juicity protocol support
+- VMess, VLESS, Shadowsocks, Trojan, Snell, TUIC, Hysteria, Sudoku, Naive, Brook, and Juicity protocol support
 - Built-in DNS server that aims to minimize DNS pollution attack impact, supports DoH/DoT upstream and fake IP.
 - Rules based off domains, GEOIP, IPCIDR or Process to forward packets to different nodes
 - Remote groups allow users to implement powerful rules. Supports automatic fallback, load balancing or auto select node
