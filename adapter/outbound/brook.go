@@ -79,6 +79,13 @@ func (b *Brook) ProxyInfo() C.ProxyInfo {
 	return info
 }
 
+// SupportUOT reports whether this Brook instance is configured to carry UDP
+// through its TCP stream. Mihomo exposes this capability through the common
+// ProxyAdapter contract and the proxy API response.
+func (b *Brook) SupportUOT() bool {
+	return b.option.UDPOverTCP
+}
+
 func NewBrook(option BrookOption) (*Brook, error) {
 	if option.Server == "" || option.Port <= 0 || option.Port > 0xffff {
 		return nil, fmt.Errorf("brook %s requires a valid server and port", option.Name)

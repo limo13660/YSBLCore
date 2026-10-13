@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"encoding/json"
 	"testing"
 
 	C "github.com/metacubex/mihomo/constant"
@@ -20,6 +21,12 @@ func TestParseBrook(t *testing.T) {
 	t.Cleanup(func() { _ = proxy.Close() })
 	require.Equal(t, C.Brook, proxy.Type())
 	require.True(t, proxy.SupportUDP())
+	require.True(t, proxy.SupportUOT())
+	encoded, err := proxy.MarshalJSON()
+	require.NoError(t, err)
+	var state map[string]any
+	require.NoError(t, json.Unmarshal(encoded, &state))
+	require.Equal(t, true, state["uot"])
 }
 
 func TestParseJuicity(t *testing.T) {

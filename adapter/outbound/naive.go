@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	N "github.com/metacubex/mihomo/common/net"
 	"github.com/metacubex/mihomo/component/resolver"
@@ -27,10 +28,13 @@ import (
 
 type Naive struct {
 	*Base
-	option    *NaiveOption
-	client    *cronet.NaiveClient
-	startOnce sync.Once
-	startErr  error
+	option        *NaiveOption
+	clientOptions cronet.NaiveClientOptions
+	client        *cronet.NaiveClient
+	lifecycleMu   sync.Mutex
+	startOnce     sync.Once
+	startErr      error
+	closed        atomic.Bool
 }
 
 func (n *Naive) DialContext(ctx context.Context, metadata *C.Metadata) (C.Conn, error) {
@@ -38,7 +42,11 @@ func (n *Naive) DialContext(ctx context.Context, metadata *C.Metadata) (C.Conn, 
 		return nil, err
 	}
 	destination := SM.ParseSocksaddrHostPort(metadata.String(), metadata.DstPort)
-	conn, err := n.client.DialEarly(ctx, destination)
+	client := n.getClient()
+	if client == nil {
+		return nil, errors.New("naive client is not initialized")
+	}
+	conn, err := client.DialEarly(ctx, destination)
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +65,11 @@ func (n *Naive) ListenPacketContext(ctx context.Context, metadata *C.Metadata) (
 	}
 	version := uint8(n.option.UDPOverTCPVersion)
 	requestDestination := uot.RequestDestination(version)
-	conn, err := n.client.DialEarly(ctx, SM.ParseSocksaddrHostPort(requestDestination.AddrString(), requestDestination.Port))
+	client := n.getClient()
+	if client == nil {
+		return nil, errors.New("naive client is not initialized")
+	}
+	conn, err := client.DialEarly(ctx, SM.ParseSocksaddrHostPort(requestDestination.AddrString(), requestDestination.Port))
 	if err != nil {
 		return nil, err
 	}
@@ -76,14 +88,41 @@ func (n *Naive) ProxyInfo() C.ProxyInfo {
 }
 
 func (n *Naive) Close() error {
+	n.lifecycleMu.Lock()
+	defer n.lifecycleMu.Unlock()
+	n.closed.Store(true)
+	if n.client == nil {
+		return nil
+	}
 	return n.client.Close()
 }
 
 func (n *Naive) start() error {
+	if n.closed.Load() {
+		return net.ErrClosed
+	}
 	n.startOnce.Do(func() {
-		n.startErr = n.client.Start()
+		n.lifecycleMu.Lock()
+		defer n.lifecycleMu.Unlock()
+		if n.closed.Load() {
+			n.startErr = net.ErrClosed
+			return
+		}
+		client, err := cronet.NewNaiveClient(n.clientOptions)
+		if err != nil {
+			n.startErr = err
+			return
+		}
+		n.client = client
+		n.startErr = client.Start()
 	})
 	return n.startErr
+}
+
+func (n *Naive) getClient() *cronet.NaiveClient {
+	n.lifecycleMu.Lock()
+	defer n.lifecycleMu.Unlock()
+	return n.client
 }
 
 func NewNaive(option NaiveOption) (*Naive, error) {
@@ -137,7 +176,7 @@ func NewNaive(option NaiveOption) (*Naive, error) {
 		option: &option,
 	}
 	outbound.dialer = option.NewDialer(outbound.DialOptions())
-	client, err := cronet.NewNaiveClient(cronet.NaiveClientOptions{
+	outbound.clientOptions = cronet.NaiveClientOptions{
 		Context:                  context.Background(),
 		ServerAddress:            SM.ParseSocksaddrHostPort(option.Server, uint16(option.Port)),
 		ServerName:               option.SNI,
@@ -155,11 +194,7 @@ func NewNaive(option NaiveOption) (*Naive, error) {
 		QUIC:                     option.QUIC,
 		QUICCongestionControl:    congestionControl,
 		QUICSessionReceiveWindow: option.QUICSessionReceiveWindow,
-	})
-	if err != nil {
-		return nil, err
 	}
-	outbound.client = client
 	return outbound, nil
 }
 
