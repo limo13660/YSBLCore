@@ -21,6 +21,7 @@ type Stream struct {
 	writeDeadline pipe.PipeDeadline
 
 	dieOnce sync.Once
+	dieMu   sync.RWMutex
 	dieHook func()
 	dieErr  error
 
@@ -40,8 +41,13 @@ func newStream(id uint32, sess *Session) *Stream {
 // Read implements net.Conn
 func (s *Stream) Read(b []byte) (n int, err error) {
 	n, err = s.pipeR.Read(b)
-	if n == 0 && s.dieErr != nil {
-		err = s.dieErr
+	if n == 0 {
+		s.dieMu.RLock()
+		dieErr := s.dieErr
+		s.dieMu.RUnlock()
+		if dieErr != nil {
+			err = dieErr
+		}
 	}
 	return
 }
@@ -53,8 +59,11 @@ func (s *Stream) Write(b []byte) (n int, err error) {
 		return 0, os.ErrDeadlineExceeded
 	default:
 	}
-	if s.dieErr != nil {
-		return 0, s.dieErr
+	s.dieMu.RLock()
+	dieErr := s.dieErr
+	s.dieMu.RUnlock()
+	if dieErr != nil {
+		return 0, dieErr
 	}
 	n, err = s.sess.writeDataFrame(s.id, b)
 	return
@@ -69,7 +78,9 @@ func (s *Stream) Close() error {
 func (s *Stream) closeLocally() {
 	var once bool
 	s.dieOnce.Do(func() {
+		s.dieMu.Lock()
 		s.dieErr = net.ErrClosed
+		s.dieMu.Unlock()
 		s.pipeR.Close()
 		once = true
 	})
@@ -84,7 +95,9 @@ func (s *Stream) closeLocally() {
 func (s *Stream) closeWithError(err error) error {
 	var once bool
 	s.dieOnce.Do(func() {
+		s.dieMu.Lock()
 		s.dieErr = err
+		s.dieMu.Unlock()
 		s.pipeR.Close()
 		once = true
 	})
@@ -96,7 +109,10 @@ func (s *Stream) closeWithError(err error) error {
 		}
 		return err
 	} else {
-		return s.dieErr
+		s.dieMu.RLock()
+		dieErr := s.dieErr
+		s.dieMu.RUnlock()
+		return dieErr
 	}
 }
 
