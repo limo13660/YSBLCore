@@ -34,6 +34,18 @@ type LoadBalance struct {
 
 type strategyFn = func(proxies []C.Proxy, metadata *C.Metadata, touch bool) C.Proxy
 
+// SupportUOT reports true only when every candidate supports UOT. A load
+// balance group can select any candidate for a request, so one UOT node is
+// insufficient to advertise group-wide support.
+func (lb *LoadBalance) SupportUOT() bool {
+	for _, proxy := range lb.GetProxies(false) {
+		if !proxy.SupportUOT() {
+			return false
+		}
+	}
+	return true
+}
+
 var errStrategy = errors.New("unsupported strategy")
 var errHashKey = errors.New("unsupported hash-key")
 
@@ -270,6 +282,7 @@ func (lb *LoadBalance) MarshalJSON() ([]byte, error) {
 		"hidden":         lb.Hidden(),
 		"icon":           lb.Icon(),
 		"emptyFallback":  lb.EmptyFallback().Name(),
+		"uot":            lb.SupportUOT(),
 	})
 }
 

@@ -72,6 +72,11 @@ func (f *Fallback) SupportUDP() bool {
 	return proxy.SupportUDP()
 }
 
+// SupportUOT implements C.ProxyAdapter.
+func (f *Fallback) SupportUOT() bool {
+	return f.findAliveProxy(false).SupportUOT()
+}
+
 // IsL3Protocol implements C.ProxyAdapter
 func (f *Fallback) IsL3Protocol(metadata *C.Metadata) bool {
 	return f.findAliveProxy(false).IsL3Protocol(metadata)
@@ -93,6 +98,7 @@ func (f *Fallback) MarshalJSON() ([]byte, error) {
 		"hidden":         f.Hidden(),
 		"icon":           f.Icon(),
 		"emptyFallback":  f.EmptyFallback().Name(),
+		"uot":            f.SupportUOT(),
 	})
 }
 

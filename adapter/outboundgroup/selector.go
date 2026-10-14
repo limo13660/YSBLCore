@@ -47,6 +47,11 @@ func (s *Selector) SupportUDP() bool {
 	return s.selectedProxy(false).SupportUDP()
 }
 
+// SupportUOT implements C.ProxyAdapter.
+func (s *Selector) SupportUOT() bool {
+	return s.selectedProxy(false).SupportUOT()
+}
+
 // IsL3Protocol implements C.ProxyAdapter
 func (s *Selector) IsL3Protocol(metadata *C.Metadata) bool {
 	return s.selectedProxy(false).IsL3Protocol(metadata)
@@ -73,6 +78,7 @@ func (s *Selector) MarshalJSON() ([]byte, error) {
 		"hidden":        s.Hidden(),
 		"icon":          s.Icon(),
 		"emptyFallback": s.EmptyFallback().Name(),
+		"uot":           s.SupportUOT(),
 	})
 }
 

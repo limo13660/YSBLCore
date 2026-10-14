@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync"
+	"sync/atomic"
 	"unsafe"
 
 	"github.com/metacubex/mihomo/common/buf"
@@ -40,18 +42,27 @@ type Conn struct {
 	readRemainingBuffer        *buf.Buffer
 	readRemainingContent       int
 	readRemainingPadding       int
-	readProcess                bool
-	readFilterUUID             bool
-	readLastCommand            byte
-	writeFilterApplicationData bool
-	writeDirect                bool
+	readProcess                atomic.Bool
+	readFilterUUID             atomic.Bool
+	readLastCommand            atomic.Uint32
+	writeFilterApplicationData atomic.Bool
+	writeDirect                atomic.Bool
 	writeOnceUserUUID          []byte
+
+	readMu   sync.Mutex
+	writeMu  sync.Mutex
+	filterMu sync.Mutex
+	// writeOnceUserUUID is protected by writeMu. This mirror lets headroom and
+	// handshake queries remain lock-free while a write is in progress.
+	writeOnceUserUUIDSet atomic.Bool
 }
 
 func (vc *Conn) Read(b []byte) (int, error) {
-	if vc.readProcess {
+	vc.readMu.Lock()
+	defer vc.readMu.Unlock()
+	if vc.readProcess.Load() {
 		buffer := buf.With(b)
-		err := vc.ReadBuffer(buffer)
+		err := vc.readBuffer(buffer)
 		if unsafe.SliceData(buffer.Bytes()) != unsafe.SliceData(b) { // buffer.Bytes() not at the beginning of b
 			copy(b, buffer.Bytes())
 		}
@@ -61,6 +72,12 @@ func (vc *Conn) Read(b []byte) (int, error) {
 }
 
 func (vc *Conn) ReadBuffer(buffer *buf.Buffer) error {
+	vc.readMu.Lock()
+	defer vc.readMu.Unlock()
+	return vc.readBuffer(buffer)
+}
+
+func (vc *Conn) readBuffer(buffer *buf.Buffer) error {
 	if vc.readRemainingBuffer != nil {
 		_, err := buffer.ReadOnceFrom(vc.readRemainingBuffer)
 		if vc.readRemainingBuffer.IsEmpty() {
@@ -88,7 +105,7 @@ func (vc *Conn) ReadBuffer(buffer *buf.Buffer) error {
 		vc.readRemainingContent -= n
 		vc.FilterTLS(readBuffer.Bytes())
 		if vc.readRemainingBuffer != nil {
-			innerErr := vc.ReadBuffer(buffer) // back to top but not losing err
+			innerErr := vc.readBuffer(buffer) // back to top but not losing err
 			if err != nil {
 				err = innerErr
 			}
@@ -102,12 +119,12 @@ func (vc *Conn) ReadBuffer(buffer *buf.Buffer) error {
 		}
 		vc.readRemainingPadding -= int(n)
 	}
-	if vc.readProcess {
-		switch vc.readLastCommand {
+	if vc.readProcess.Load() {
+		switch byte(vc.readLastCommand.Load()) {
 		case commandPaddingContinue:
 			//if vc.isTLS || vc.packetsToFilter > 0 {
 			need := PaddingHeaderLen
-			if !vc.readFilterUUID {
+			if !vc.readFilterUUID.Load() {
 				need = PaddingHeaderLen - uuid.Size
 			}
 			var header []byte
@@ -120,8 +137,8 @@ func (vc *Conn) ReadBuffer(buffer *buf.Buffer) error {
 			if err != nil {
 				return err
 			}
-			if vc.readFilterUUID {
-				vc.readFilterUUID = false
+			if vc.readFilterUUID.Load() {
+				vc.readFilterUUID.Store(false)
 				if !bytes.Equal(vc.userUUID.Bytes(), header[:uuid.Size]) {
 					err = fmt.Errorf("XTLS Vision server responded unknown UUID: %s", uuid.FromBytesOrNil(header[:uuid.Size]))
 					log.Errorln(err.Error())
@@ -131,14 +148,14 @@ func (vc *Conn) ReadBuffer(buffer *buf.Buffer) error {
 			}
 			vc.readRemainingPadding = int(binary.BigEndian.Uint16(header[3:]))
 			vc.readRemainingContent = int(binary.BigEndian.Uint16(header[1:]))
-			vc.readLastCommand = header[0]
+			vc.readLastCommand.Store(uint32(header[0]))
 			log.Debugln("XTLS Vision read padding: command=%d, payloadLen=%d, paddingLen=%d",
-				vc.readLastCommand, vc.readRemainingContent, vc.readRemainingPadding)
-			return vc.ReadBuffer(buffer)
+				vc.readLastCommand.Load(), vc.readRemainingContent, vc.readRemainingPadding)
+			return vc.readBuffer(buffer)
 			//}
 		case commandPaddingEnd:
-			vc.readProcess = false
-			return vc.ReadBuffer(buffer)
+			vc.readProcess.Store(false)
+			return vc.readBuffer(buffer)
 		case commandPaddingDirect:
 			needReturn := false
 			if vc.input != nil {
@@ -170,7 +187,7 @@ func (vc *Conn) ReadBuffer(buffer *buf.Buffer) error {
 				}
 			}
 			if vc.input == nil && vc.rawInput == nil {
-				vc.readProcess = false
+				vc.readProcess.Store(false)
 				vc.ExtendedReader = N.NewExtendedReader(vc.netConn)
 				log.Debugln("XTLS Vision direct read start")
 			}
@@ -178,7 +195,7 @@ func (vc *Conn) ReadBuffer(buffer *buf.Buffer) error {
 				return nil
 			}
 		default:
-			err := fmt.Errorf("XTLS Vision read unknown command: %d", vc.readLastCommand)
+			err := fmt.Errorf("XTLS Vision read unknown command: %d", vc.readLastCommand.Load())
 			log.Debugln(err.Error())
 			return err
 		}
@@ -187,39 +204,69 @@ func (vc *Conn) ReadBuffer(buffer *buf.Buffer) error {
 }
 
 func (vc *Conn) Write(p []byte) (int, error) {
-	if vc.writeFilterApplicationData {
-		return N.WriteBuffer(vc, buf.As(p))
+	vc.writeMu.Lock()
+	defer vc.writeMu.Unlock()
+	if vc.writeFilterApplicationData.Load() {
+		buffer := buf.As(p)
+		frontHeadroom := N.CalculateFrontHeadroom(vc)
+		rearHeadroom := N.CalculateRearHeadroom(vc)
+		if frontHeadroom > buffer.Start() || rearHeadroom > buffer.FreeLen() {
+			newBuffer := buf.NewSize(buffer.Len() + frontHeadroom + rearHeadroom)
+			newBuffer.Resize(frontHeadroom, 0)
+			buf.Must(buf.Error(newBuffer.Write(buffer.Bytes())))
+			buffer = newBuffer
+		}
+		dataLen := buffer.Len()
+		err := vc.writeBuffer(buffer)
+		if err != nil {
+			return 0, err
+		}
+		return dataLen, nil
 	}
 	return vc.ExtendedWriter.Write(p)
 }
 
 func (vc *Conn) WriteBuffer(buffer *buf.Buffer) (err error) {
-	if vc.writeFilterApplicationData {
+	vc.writeMu.Lock()
+	defer vc.writeMu.Unlock()
+	return vc.writeBuffer(buffer)
+}
+
+func (vc *Conn) writeBuffer(buffer *buf.Buffer) (err error) {
+	if vc.writeFilterApplicationData.Load() {
 		if buffer.IsEmpty() {
 			ApplyPadding(buffer, commandPaddingContinue, &vc.writeOnceUserUUID, true) // we do a long padding to hide vless header
+			vc.writeOnceUserUUIDSet.Store(vc.writeOnceUserUUID != nil)
 			return vc.ExtendedWriter.WriteBuffer(buffer)
 		}
 
-		vc.FilterTLS(buffer.Bytes())
+		vc.filterMu.Lock()
+		vc.filterTLS(buffer.Bytes())
+		isTLS := vc.isTLS
+		isTLS12orAbove := vc.isTLS12orAbove
+		packetsToFilter := vc.packetsToFilter
+		enableXTLS := vc.enableXTLS
+		vc.filterMu.Unlock()
 		buffers := vc.ReshapeBuffer(buffer)
 		applyPadding := true
 		for i, buffer := range buffers {
 			command := commandPaddingContinue
 			if applyPadding {
-				if vc.isTLS && buffer.Len() > 6 && bytes.Equal(tlsApplicationDataStart, buffer.To(3)) {
+				if isTLS && buffer.Len() > 6 && bytes.Equal(tlsApplicationDataStart, buffer.To(3)) {
 					command = commandPaddingEnd
-					if vc.enableXTLS {
+					if enableXTLS {
 						command = commandPaddingDirect
-						vc.writeDirect = true
+						vc.writeDirect.Store(true)
 					}
-					vc.writeFilterApplicationData = false
+					vc.writeFilterApplicationData.Store(false)
 					applyPadding = false
-				} else if !vc.isTLS12orAbove && vc.packetsToFilter <= 1 {
+				} else if !isTLS12orAbove && packetsToFilter <= 1 {
 					command = commandPaddingEnd
-					vc.writeFilterApplicationData = false
+					vc.writeFilterApplicationData.Store(false)
 					applyPadding = false
 				}
-				ApplyPadding(buffer, command, &vc.writeOnceUserUUID, vc.isTLS)
+				ApplyPadding(buffer, command, &vc.writeOnceUserUUID, isTLS)
+				vc.writeOnceUserUUIDSet.Store(vc.writeOnceUserUUID != nil)
 			}
 
 			err = vc.ExtendedWriter.WriteBuffer(buffer)
@@ -243,10 +290,10 @@ func (vc *Conn) WriteBuffer(buffer *buf.Buffer) (err error) {
 
 func (vc *Conn) FrontHeadroom() int {
 	fontHeadroom := PaddingHeaderLen - uuid.Size
-	if vc.readFilterUUID || vc.writeOnceUserUUID != nil {
+	if vc.readFilterUUID.Load() || vc.writeOnceUserUUIDSet.Load() {
 		fontHeadroom = PaddingHeaderLen
 	}
-	if vc.writeFilterApplicationData { // The writer may be replaced, add the required value for vc.netConn
+	if vc.writeFilterApplicationData.Load() { // The writer may be replaced, add the required value for vc.netConn
 		if abs := N.CalculateFrontHeadroom(vc.netConn) - N.CalculateFrontHeadroom(vc.Conn); abs > 0 {
 			fontHeadroom += abs
 		}
@@ -256,7 +303,7 @@ func (vc *Conn) FrontHeadroom() int {
 
 func (vc *Conn) RearHeadroom() int {
 	rearHeadroom := 500 + 900
-	if vc.writeFilterApplicationData { // The writer may be replaced, add the required value for vc.netConn
+	if vc.writeFilterApplicationData.Load() { // The writer may be replaced, add the required value for vc.netConn
 		if abs := N.CalculateRearHeadroom(vc.netConn) - N.CalculateRearHeadroom(vc.Conn); abs > 0 {
 			rearHeadroom += abs
 		}
@@ -265,7 +312,7 @@ func (vc *Conn) RearHeadroom() int {
 }
 
 func (vc *Conn) NeedHandshake() bool {
-	return vc.writeOnceUserUUID != nil
+	return vc.writeOnceUserUUIDSet.Load()
 }
 
 func (vc *Conn) NeedAdditionalReadDeadline() bool {
@@ -273,31 +320,31 @@ func (vc *Conn) NeedAdditionalReadDeadline() bool {
 }
 
 func (vc *Conn) Upstream() any {
-	if vc.writeDirect ||
-		vc.readLastCommand == commandPaddingDirect {
+	if vc.writeDirect.Load() ||
+		byte(vc.readLastCommand.Load()) == commandPaddingDirect {
 		return vc.netConn
 	}
 	return vc.Conn
 }
 
 func (vc *Conn) ReaderPossiblyReplaceable() bool {
-	return vc.readProcess
+	return vc.readProcess.Load()
 }
 
 func (vc *Conn) ReaderReplaceable() bool {
-	if !vc.readProcess &&
-		vc.readLastCommand == commandPaddingDirect {
+	if !vc.readProcess.Load() &&
+		byte(vc.readLastCommand.Load()) == commandPaddingDirect {
 		return true
 	}
 	return false
 }
 
 func (vc *Conn) WriterPossiblyReplaceable() bool {
-	return vc.writeFilterApplicationData
+	return vc.writeFilterApplicationData.Load()
 }
 
 func (vc *Conn) WriterReplaceable() bool {
-	if vc.writeDirect {
+	if vc.writeDirect.Load() {
 		return true
 	}
 	return false

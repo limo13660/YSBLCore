@@ -8,7 +8,7 @@
 ## YSBLCore / Mihomo Meta baseline
 
 YSBLCore tracks the official [MetaCubeX/mihomo `Meta` branch](https://github.com/MetaCubeX/mihomo/tree/Meta).
-The current baseline is `v1.19.31` (`ab405bad5beeeac8b003bb01f60f134f6df54471`).
+The current baseline is `v1.19.32` (`1419c14558d570f168bba63ebe3f96001ae6bec0`).
 Upstream protocol implementations, including Sudoku, are used directly. The
 YSBLCore-specific changes are limited to the embedding hooks and protocol
 extensions that were already part of the client baseline; they must be kept
@@ -18,7 +18,7 @@ The Flutter client owns listener and TUN lifecycle. Core configuration updates
 therefore update routing, proxies and rules in place; they do not recreate an
 active TUN interface. `StopListener` is reserved for an explicit VPN stop or
 shutdown. Existing YSBLCore protocol extensions remain enabled, including
-Mieru, Naive and Juicity, and must not be removed when syncing upstream changes.
+Mieru, Naive, Brook and Juicity, and must not be removed when syncing upstream changes.
 
 <p align="center">
   <a href="https://goreportcard.com/report/github.com/MetaCubeX/mihomo">

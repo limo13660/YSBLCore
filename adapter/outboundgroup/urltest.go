@@ -156,6 +156,11 @@ func (u *URLTest) SupportUDP() bool {
 	return u.fast(false).SupportUDP()
 }
 
+// SupportUOT implements C.ProxyAdapter.
+func (u *URLTest) SupportUOT() bool {
+	return u.fast(false).SupportUOT()
+}
+
 // IsL3Protocol implements C.ProxyAdapter
 func (u *URLTest) IsL3Protocol(metadata *C.Metadata) bool {
 	return u.fast(false).IsL3Protocol(metadata)
@@ -177,6 +182,7 @@ func (u *URLTest) MarshalJSON() ([]byte, error) {
 		"hidden":         u.Hidden(),
 		"icon":           u.Icon(),
 		"emptyFallback":  u.EmptyFallback().Name(),
+		"uot":            u.SupportUOT(),
 	})
 }
 

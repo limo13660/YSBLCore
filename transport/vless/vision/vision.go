@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"reflect"
+	"sync/atomic"
 	"unsafe"
 
 	N "github.com/metacubex/mihomo/common/net"
@@ -31,11 +32,15 @@ func NewConn(conn net.Conn, tlsConn net.Conn, userUUID uuid.UUID) (*Conn, error)
 		Conn:                       conn,
 		userUUID:                   userUUID,
 		packetsToFilter:            8,
-		readProcess:                true,
-		readFilterUUID:             true,
-		writeFilterApplicationData: true,
+		readProcess:                atomic.Bool{},
+		readFilterUUID:             atomic.Bool{},
+		writeFilterApplicationData: atomic.Bool{},
 		writeOnceUserUUID:          userUUID.Bytes(),
 	}
+	c.readProcess.Store(true)
+	c.readFilterUUID.Store(true)
+	c.writeFilterApplicationData.Store(true)
+	c.writeOnceUserUUIDSet.Store(true)
 	var t reflect.Type
 	var p unsafe.Pointer
 	var upstream any = tlsConn
