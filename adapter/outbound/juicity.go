@@ -217,6 +217,9 @@ func NewJuicity(option JuicityOption) (*Juicity, error) {
 }
 
 func decodeJuicityCertHash(value string) ([]byte, error) {
+	if decoded, err := hex.DecodeString(value); err == nil && len(decoded) == sha256.Size {
+		return decoded, nil
+	}
 	encodings := []*base64.Encoding{base64.URLEncoding, base64.RawURLEncoding, base64.StdEncoding, base64.RawStdEncoding}
 	for _, encoding := range encodings {
 		if decoded, err := encoding.DecodeString(value); err == nil {
@@ -226,11 +229,7 @@ func decodeJuicityCertHash(value string) ([]byte, error) {
 			return decoded, nil
 		}
 	}
-	decoded, err := hex.DecodeString(value)
-	if err != nil || len(decoded) != sha256.Size {
-		return nil, errors.New("juicity: invalid pinned certificate chain hash")
-	}
-	return decoded, nil
+	return nil, errors.New("juicity: invalid pinned certificate chain hash")
 }
 
 func juicityCertChainHash(rawCerts [][]byte) []byte {
