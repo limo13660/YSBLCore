@@ -67,32 +67,22 @@ func (m *Manager) Range(f func(c Tracker) bool) {
 	})
 }
 
-func (m *Manager) PushUploaded(size int64) {
+func (m *Manager) PushUploaded(direct bool, size int64) {
+	if !direct {
+		m.proxyUploadTemp.Add(size)
+		m.proxyUploadTotal.Add(size)
+	}
 	m.uploadTemp.Add(size)
 	m.uploadTotal.Add(size)
 }
 
-func (m *Manager) PushDownloaded(size int64) {
-	m.downloadTemp.Add(size)
-	m.downloadTotal.Add(size)
-}
-
-// PushUploadedWithChain preserves the original traffic counters while also
-// tracking bytes that travelled through a proxy rather than DIRECT.
-func (m *Manager) PushUploadedWithChain(lastChain string, size int64) {
-	if lastChain != "DIRECT" {
-		m.proxyUploadTemp.Add(size)
-		m.proxyUploadTotal.Add(size)
-	}
-	m.PushUploaded(size)
-}
-
-func (m *Manager) PushDownloadedWithChain(lastChain string, size int64) {
-	if lastChain != "DIRECT" {
+func (m *Manager) PushDownloaded(direct bool, size int64) {
+	if !direct {
 		m.proxyDownloadTemp.Add(size)
 		m.proxyDownloadTotal.Add(size)
 	}
-	m.PushDownloaded(size)
+	m.downloadTemp.Add(size)
+	m.downloadTotal.Add(size)
 }
 
 func (m *Manager) Now() (up int64, down int64) {
@@ -137,12 +127,14 @@ func (m *Manager) ResetStatistic() {
 	m.downloadTemp.Store(0)
 	m.downloadBlip.Store(0)
 	m.downloadTotal.Store(0)
+
 	m.proxyUploadTemp.Store(0)
 	m.proxyUploadBlip.Store(0)
 	m.proxyUploadTotal.Store(0)
 	m.proxyDownloadTemp.Store(0)
 	m.proxyDownloadBlip.Store(0)
 	m.proxyDownloadTotal.Store(0)
+
 }
 
 func (m *Manager) handle() {
