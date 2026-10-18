@@ -139,6 +139,7 @@ func NewSelector(option GroupCommonOption, selectorOption SelectorOption, emptyF
 			MaxFailedTimes: option.MaxFailedTimes,
 			EmptyFallback:  emptyFallback,
 			Providers:      providers,
+			UsePosition:    option.UsePosition,
 		}),
 		selected:   selectorOption.DefaultSelected,
 		disableUDP: option.DisableUDP,
