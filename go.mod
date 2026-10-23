@@ -7,7 +7,7 @@ require (
 	github.com/coreos/go-iptables v0.8.0
 	github.com/dlclark/regexp2 v1.12.0
 	github.com/easytier/easytier/easytier-go v0.0.0-20260910071355-3d0c9c3ca5e2
-	github.com/enfein/mieru/v3 v3.38.1
+	github.com/enfein/mieru/v3 v3.38.2
 	github.com/gobwas/ws v1.4.0
 	github.com/gofrs/uuid/v5 v5.4.0
 	github.com/golang/snappy v1.0.0
@@ -53,7 +53,7 @@ require (
 	github.com/mroth/weightedrand/v2 v2.1.0
 	github.com/openacid/low v0.1.21
 	github.com/rasky/go-lzo v0.0.0-20200203143853-96a758eda86e
-	github.com/sagernet/cronet-go v0.0.0-20260620140045-05ab0dc17597
+	github.com/sagernet/cronet-go v0.0.0-20260912091555-049f2909701c
 	github.com/sagernet/sing v0.8.9
 	github.com/samber/lo v1.53.0
 	github.com/sirupsen/logrus v1.9.4

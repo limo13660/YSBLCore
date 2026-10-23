@@ -21,6 +21,10 @@ const (
 	networkTCP       = 1
 	networkUDP       = 3
 	protocolError    = quic.ApplicationErrorCode(0xfffffff0)
+	// Juicity requires clients to open a new QUIC connection before the
+	// stream limit is exhausted. quic-go does not expose the peer's dynamic
+	// max-open-stream count, so use the protocol's recommended safe limit.
+	maxStreamsPerConn = 30
 )
 
 type DialFunc func(ctx context.Context) (*quic.Conn, error)
@@ -30,9 +34,13 @@ type Client struct {
 	password string
 	dialFn   DialFunc
 
-	mu     sync.Mutex
-	conn   *quic.Conn
-	closed bool
+	mu   sync.Mutex
+	conn *quic.Conn
+	// connections includes retired connections that may still carry active
+	// streams. They are closed together with the client.
+	connections map[*quic.Conn]struct{}
+	streamCount int
+	closed      bool
 }
 
 func NewClient(uuid [16]byte, password string, dialFn DialFunc) *Client {
@@ -81,8 +89,20 @@ func (c *Client) getConn(ctx context.Context) (*quic.Conn, error) {
 	if c.closed {
 		return nil, net.ErrClosed
 	}
-	if c.conn != nil && c.conn.Context().Err() == nil {
-		return c.conn, nil
+	if c.conn != nil {
+		if c.conn.Context().Err() != nil {
+			delete(c.connections, c.conn)
+			c.conn = nil
+			c.streamCount = 0
+		} else if c.streamCount < maxStreamsPerConn {
+			c.streamCount++
+			return c.conn, nil
+		} else {
+			// Keep the old connection alive for streams already opened on it.
+			// New requests use a fresh connection instead.
+			c.conn = nil
+			c.streamCount = 0
+		}
 	}
 	quicConn, err := c.dialFn(ctx)
 	if err != nil {
@@ -93,6 +113,11 @@ func (c *Client) getConn(ctx context.Context) (*quic.Conn, error) {
 		return nil, err
 	}
 	c.conn = quicConn
+	c.streamCount = 1
+	if c.connections == nil {
+		c.connections = make(map[*quic.Conn]struct{})
+	}
+	c.connections[quicConn] = struct{}{}
 	return quicConn, nil
 }
 
@@ -124,14 +149,18 @@ func (c *Client) authenticate(conn *quic.Conn) error {
 func (c *Client) invalidate(conn *quic.Conn, cause error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.conn != conn {
-		return
-	}
-	c.conn = nil
 	description := ""
 	if cause != nil {
 		description = cause.Error()
 	}
+	if c.conn != conn {
+		delete(c.connections, conn)
+		_ = conn.CloseWithError(protocolError, description)
+		return
+	}
+	c.conn = nil
+	c.streamCount = 0
+	delete(c.connections, conn)
 	_ = conn.CloseWithError(protocolError, description)
 }
 
@@ -142,12 +171,16 @@ func (c *Client) Close() error {
 		return nil
 	}
 	c.closed = true
-	if c.conn != nil {
-		err := c.conn.CloseWithError(0, "")
-		c.conn = nil
-		return err
+	var closeErr error
+	for conn := range c.connections {
+		if err := conn.CloseWithError(0, ""); err != nil && closeErr == nil {
+			closeErr = err
+		}
 	}
-	return nil
+	c.connections = nil
+	c.conn = nil
+	c.streamCount = 0
+	return closeErr
 }
 
 type streamPacketConn struct {
