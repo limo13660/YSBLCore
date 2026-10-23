@@ -8,7 +8,7 @@
 ## YSBLCore / Mihomo Meta baseline
 
 YSBLCore tracks the official [MetaCubeX/mihomo `Meta` branch](https://github.com/MetaCubeX/mihomo/tree/Meta).
-The current baseline is `v1.19.32` (`1419c14558d570f168bba63ebe3f96001ae6bec0`).
+The current baseline is `v1.19.33` (official Mihomo commit `3f27ef39f8c96bbfbc8b0b9bb10f5c9ef60149d8`).
 Upstream protocol implementations, including Sudoku, are used directly. The
 YSBLCore-specific changes are limited to the embedding hooks and protocol
 extensions that were already part of the client baseline; they must be kept
