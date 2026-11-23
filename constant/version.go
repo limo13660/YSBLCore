@@ -4,7 +4,7 @@ package constant
 // default matches the current baseline for untagged local builds.
 var (
 	Meta       = true
-	Version    = "v1.19.33"
+	Version    = "v1.19.34"
 	BuildTime  = "unknown time"
 	MihomoName = "mihomo"
 )
