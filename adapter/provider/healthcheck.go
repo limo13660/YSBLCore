@@ -26,6 +26,15 @@ type extraOption struct {
 	filters        map[string]struct{}
 }
 
+var defaultHealthCheckTimeout = atomic.NewInt64(5000)
+
+// SetDefaultTestTimeout updates the timeout used when a provider omits one.
+func SetDefaultTestTimeout(timeout time.Duration) {
+	if timeout > 0 {
+		defaultHealthCheckTimeout.Store(timeout.Milliseconds())
+	}
+}
+
 type HealthCheck struct {
 	ctx            context.Context
 	ctxCancel      context.CancelFunc
@@ -198,7 +207,7 @@ func NewHealthCheck(proxies []C.Proxy, url string, timeout uint, interval uint, 
 		interval = 0
 	}
 	if timeout == 0 {
-		timeout = 5000
+		timeout = uint(defaultHealthCheckTimeout.Load())
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 
