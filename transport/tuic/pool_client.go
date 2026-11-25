@@ -119,6 +119,21 @@ func (t *PoolClient) getClient(udp bool) Client {
 	}
 }
 
+func (t *PoolClient) ResetNetwork() {
+	retire := func(clients *list.List[Client], mutex *sync.Mutex) {
+		mutex.Lock()
+		defer mutex.Unlock()
+		for item := clients.Front(); item != nil; item = item.Next() {
+			if item.Value != nil {
+				item.Value.Close()
+			}
+		}
+		clients.Init()
+	}
+	retire(&t.tcpClients, &t.tcpClientsMutex)
+	retire(&t.udpClients, &t.udpClientsMutex)
+}
+
 func NewPoolClientV4(clientOption *ClientOptionV4, dialFn DialFunc) *PoolClient {
 	p := &PoolClient{
 		dialFn: dialFn,

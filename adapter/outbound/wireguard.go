@@ -45,6 +45,7 @@ const (
 type wireguardGoDevice interface {
 	Close()
 	IpcSet(uapiConf string) error
+	BindUpdate() error
 }
 
 type WireGuard struct {
@@ -812,6 +813,18 @@ func (w *WireGuard) Close() error {
 		wgDevice.Close()
 	}
 	return nil
+}
+
+func (w *WireGuard) ResetNetwork() {
+	w.deviceMutex.Lock()
+	device := w.device
+	w.deviceMutex.Unlock()
+	if device == nil {
+		return
+	}
+	if err := device.BindUpdate(); err != nil {
+		log.Warnln("[WG](%s) reopen socket: %v", w.option.Name, err)
+	}
 }
 
 func (w *WireGuard) DialContext(ctx context.Context, metadata *C.Metadata) (_ C.Conn, err error) {
